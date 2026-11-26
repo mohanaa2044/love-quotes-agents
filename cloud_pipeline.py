@@ -1,5 +1,4 @@
-@'
-import datetime, json, math, os, random, subprocess, sys, textwrap, time, wave
+﻿import datetime, json, math, os, random, subprocess, sys, textwrap, time, wave
 import numpy as np
 import requests
 from pathlib import Path
@@ -203,7 +202,3 @@ if ig_id and token:
         time.sleep(4)
     pub = requests.post(f"{GRAPH}/{ig_id}/media_publish", data={"creation_id": cid, "access_token": token}).json()
     print("[Instagram] PUBLISHED:", pub)
-'@ | Set-Content -Path cloud_pipeline.py -Encoding utf8
-
-python -m py_compile cloud_pipeline.py; if ($?) { "SYNTAX OK! Ready to upload." }
-explorer .
