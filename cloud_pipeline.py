@@ -47,4 +47,4 @@ SERIES = [
                 ("03", "Never beg for respect", "Love without respect is just attachment in disguise."),
                 ("04", "Never beg for honesty", "Real love feels safe—never like being a detective.")],
      "cta": "Save this reminder for the days you forget your worth.\nSend to someone who needs this."},
-    {"emotion": "romantic", "c1": (42, 10, 32), "c2": (110, 26, 68), "accent": (255, 182, 193),)
+    {"emotion": "romantic", "c1": (42, 10, 32), "c2": (110, 26, 68), "accent": (255, 182, 193),
