@@ -1,4 +1,4 @@
-﻿import datetime, json, math, os, random, subprocess, sys, textwrap, time, wave
+﻿import datetime, json, math, os, random, re, subprocess, sys, textwrap, time, wave
 import numpy as np
 import requests
 from pathlib import Path
@@ -11,16 +11,18 @@ from googleapiclient.http import MediaFileUpload
 GRAPH = "https://graph.facebook.com/v21.0"
 YT_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
+# 1. Ramp Schedule Gate: Days 1-2 = 2x/day (12:30 & 18:30 IST); Day 3+ = 4x/day
 STATE_FILE = Path("schedule_state.json")
 state = json.loads(STATE_FILE.read_text(encoding="utf-8")) if STATE_FILE.exists() else {
-    "start_date": datetime.date.today().isoformat(), "posted_titles": []
+    "start_date": datetime.date.today().isoformat(), "posted_titles": [], "last_emotion": ""
 }
 day_num = (datetime.date.today() - datetime.date.fromisoformat(state["start_date"])).days + 1
-utc_hour = datetime.datetime.utcnow().hour
+utc_hour = datetime.datetime.now(datetime.timezone.utc).hour
 if os.getenv("GITHUB_EVENT_NAME") == "schedule" and day_num <= 2 and utc_hour not in (7, 13):
     print(f"Day {day_num} (2x/day phase): skipping slot at {utc_hour:02d}:00 UTC.")
     sys.exit(0)
 
+# 2. High-Shareability Relationship Series Bank
 SERIES = [
     {"emotion": "trust", "c1": (18, 12, 28), "c2": (64, 34, 62), "accent": (253, 224, 171), "query": "coffee aesthetic cozy",
      "cover": "4 Quiet Signs Someone Truly Loves You",
@@ -42,7 +44,7 @@ SERIES = [
                 ("02", "Never beg to be chosen", "You deserve certainty even on ordinary days."),
                 ("03", "Never beg for respect", "Love without respect is just attachment in disguise."),
                 ("04", "Never beg for honesty", "Real love feels safe—never like being a detective.")],
-     "cta": "Save this reminder for the days you forget your worth.\nSend to someone who needs this."},
+     "cta": "Save this reminder and send it to someone who needs #2 today."},
     {"emotion": "romantic", "c1": (42, 10, 32), "c2": (110, 26, 68), "accent": (255, 182, 193), "query": "couple sunset aesthetic",
      "cover": "4 Green Flags Of A Healthy Relationship",
      "points": [("01", "You can be 100% yourself", "No walking on eggshells, no shrinking your joy."),
@@ -63,13 +65,69 @@ SERIES = [
                 ("02", "Keep private problems private", "Protect your relationship from outside noise."),
                 ("03", "Keep dating each other", "Effort should not stop once you feel comfortable."),
                 ("04", "Listen to understand, not reply", "Most fights end the moment someone truly feels heard.")],
-     "cta": "Tag or send this to your forever person.\nWhich rule matters most (1-4)?"},
+     "cta": "Send this to your forever person.\nWhich rule matters most (1-4)?"},
+    {"emotion": "healing", "c1": (12, 28, 38), "c2": (36, 72, 92), "accent": (167, 243, 208), "query": "calm forest morning mist",
+     "cover": "4 Signs You Are Finally Healing",
+     "points": [("01", "Their name stops hurting", "You can hear about them without your whole mood changing."),
+                ("02", "You stop checking their status", "Your peace becomes more valuable than their updates."),
+                ("03", "You forgive yourself", "You realize you did the best you could with what you knew."),
+                ("04", "You protect your energy", "Not everyone deserves front-row access to your heart.")],
+     "cta": "Send this to a friend who is getting stronger every day.\nComment which sign you feel (1-4)."},
+    {"emotion": "romantic", "c1": (48, 12, 28), "c2": (118, 36, 62), "accent": (254, 205, 211), "query": "romantic candles evening",
+     "cover": "4 Small Habits That Make Love Stronger",
+     "points": [("01", "Texting when you arrive safely", "Small check-ins say I care without needing big speeches."),
+                ("02", "Holding hands during hard talks", "Touch reminds both hearts you are on the same team."),
+                ("03", "Saying thank you for daily things", "Never let appreciation fade just because it feels routine."),
+                ("04", "Choosing patience over pride", "A calm tone heals faster than winning an argument.")],
+     "cta": "Send this to someone you want to build #1-#4 with.\nSave for later."},
+    {"emotion": "heartbreak", "c1": (16, 16, 28), "c2": (48, 42, 74), "accent": (199, 210, 254), "query": "lonely street rain night",
+     "cover": "4 Red Flags We Ignore When In Love",
+     "points": [("01", "Hot and cold attention", "Confusion is not chemistry—it is inconsistency."),
+                ("02", "Every concern becomes your fault", "Someone who loves you listens instead of deflecting."),
+                ("03", "Secretly hiding the relationship", "Real love never asks you to stay a secret."),
+                ("04", "Empty promises without change", "An apology without changed behavior is just manipulation.")],
+     "cta": "Send this to a friend who needs a gentle wake-up call.\nWhich red flag is hardest to spot (1-4)?"},
+    {"emotion": "missing", "c1": (22, 16, 40), "c2": (72, 48, 98), "accent": (233, 213, 255), "query": "moonlight night sky clouds",
+     "cover": "4 Unspoken Feelings Late At Night",
+     "points": [("01", "Waiting for one specific notification", "Your phone lights up and your heart still hopes it is them."),
+                ("02", "Re-reading old messages", "Visiting memories you know you cannot live in anymore."),
+                ("03", "Smiling at strangers who remind you", "For one split second, you forget they are not here."),
+                ("04", "Wishing them well from afar", "Loving someone quietly even when your paths split.")],
+     "cta": "Send this to someone who understands late-night thoughts.\nComment 1, 2, 3, or 4."},
 ]
 
-unused = [s for s in SERIES if s["cover"] not in state["posted_titles"]]
-post = unused[0] if unused else random.choice(SERIES)
+# 3. Viral Potential Validator (Must score >= 80/100 to pass)
+def viral_score(item):
+    score, reasons = 0, []
+    words_cover = len(item["cover"].split())
+    if re.match(r"^\d+\s", item["cover"]) and words_cover <= 10:
+        score += 30
+    else:
+        reasons.append("Weak hook")
+    if any(k in item["cta"].lower() for k in ("send", "tag", "share")):
+        score += 30
+    else:
+        reasons.append("No DM-share CTA")
+    if len(item["points"]) == 4 and all(4 <= len(d.split()) <= 18 for _, _, d in item["points"]):
+        score += 20
+    else:
+        reasons.append("Pacing too dense")
+    if item["cover"] not in state["posted_titles"] and item["emotion"] != state.get("last_emotion", ""):
+        score += 20
+    elif item["cover"] not in state["posted_titles"]:
+        score += 10
+    return score, reasons
+
+ranked = sorted(((viral_score(s)[0], s) for s in SERIES), key=lambda x: x[0], reverse=True)
+best_score, post = ranked[0]
+print(f"[Viral Validator] Selected: '{post['cover']}' ({post['emotion']}) | Score: {best_score}/100")
+assert best_score >= 80, f"FAIL: Best candidate scored only {best_score}/100 (below 80 threshold)."
+
 if post["cover"] not in state["posted_titles"]:
     state["posted_titles"].append(post["cover"])
+if len(state["posted_titles"]) >= len(SERIES):
+    state["posted_titles"] = [post["cover"]]  # Reset cycle cleanly once all series have run
+state["last_emotion"] = post["emotion"]
 STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 caption = f"{post['cover']}\n\n{post['cta']}\n\n#lovequotes #relationshipadvice #{post['emotion']} #reels #shorts"
@@ -96,7 +154,7 @@ def make_designed_bg(W, H, c1, c2, acc):
         od.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], fill=acc + (alpha,))
     return Image.alpha_composite(img, orbs.filter(ImageFilter.GaussianBlur(70)))
 
-def render_overlay(W, H, c1, c2, acc, title, body=""):
+def render_overlay(W, H, acc, title, body=""):
     base = Image.new("RGBA", (W, H), (0, 0, 0, 95))
     card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
@@ -153,7 +211,7 @@ slides = [(post["cover"], "")] + [(f"{n}. {h}", d) for n, h, d in post["points"]
 SLIDE_SEC, overlays = 3.2, []
 for i, (t_txt, b_txt) in enumerate(slides):
     p = f"ov_{i+1:02d}.png"
-    render_overlay(1080, 1920, post["c1"], post["c2"], accent, t_txt, b_txt).save(p)
+    render_overlay(1080, 1920, accent, t_txt, b_txt).save(p)
     overlays.append(p)
 
 v_in = ["-stream_loop", "-1", "-i", str(bg_mp4)] if bg_mp4 else ["-loop", "1", "-i", "designed_bg.png"]
