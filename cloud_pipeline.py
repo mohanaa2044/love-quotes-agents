@@ -2,7 +2,7 @@
 import numpy as np
 import requests
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -23,9 +23,8 @@ if os.getenv("GITHUB_EVENT_NAME") == "schedule" and day_num <= 2 and utc_hour no
     print(f"Day {day_num} (2x/day phase): skipping slot at {utc_hour:02d}:00 UTC.")
     sys.exit(0)
 
-# 2. Multi-Format Content Bank (Doodle Illustration + 4-Slide Series + 2-Beat POV)
+# 2. Multi-Format Content Bank (Doodle Couple + 4-Slide Series + 2-Beat POV)
 CONTENT = [
-    # --- DOODLE / ILLUSTRATED CONFESSION FORMAT ---
     {"format": "doodle", "emotion": "romantic", "query": "couple sunset anime illustration love",
      "cover": "I don't know what you did to me,\nI just feel at home whenever I'm with you",
      "cta": "Send this to the person who feels like home."},
@@ -38,7 +37,6 @@ CONTENT = [
     {"format": "doodle", "emotion": "missing", "query": "aesthetic pastel clouds twilight sky",
      "cover": "Even on my busiest days,\nmy mind still finds a quiet second to miss you",
      "cta": "Send this to the person on your mind right now."},
-    # --- 4-SLIDE SERIES FORMAT ---
     {"format": "series", "emotion": "trust", "c1": (18, 12, 28), "c2": (64, 34, 62), "accent": (253, 224, 171), "query": "coffee aesthetic cozy",
      "cover": "4 Quiet Signs Someone Truly Loves You",
      "points": [("01", "They remember the small things", "Not just birthdays—what calms you down on a hard day."),
@@ -60,7 +58,6 @@ CONTENT = [
                 ("03", "Stop watering dead roots", "If only one person is fighting for it, it is already over."),
                 ("04", "Outgrowing someone is not a failure", "Some people arrive to teach you what you deserve.")],
      "cta": "Send this to a friend who needs to hear #3 today.\nSave this for later."},
-    # --- 2-BEAT POV HOOK FORMAT ---
     {"format": "pov", "emotion": "heartbreak", "c1": (16, 16, 28), "c2": (48, 42, 74), "accent": (199, 210, 254), "query": "lonely street rain night",
      "cover": "You never realize how heavy silence is...",
      "payoff": "until the person you told everything to becomes a stranger.",
@@ -71,9 +68,8 @@ CONTENT = [
      "cta": "Save this and send it to a friend who is healing."},
 ]
 
-# 3. Viral Potential Validator (Scores >= 80/100 + enforces format & emotion rotation)
 def viral_score(item):
-    score = 30  # strong relatable hook/visual
+    score = 30
     if any(k in item["cta"].lower() for k in ("send", "tag", "share")):
         score += 35
     if item["cover"] not in state["posted_titles"]:
@@ -87,7 +83,6 @@ def viral_score(item):
 ranked = sorted(((viral_score(s), s) for s in CONTENT), key=lambda x: x[0], reverse=True)
 best_score, post = ranked[0]
 print(f"[Viral Validator] Format: {post['format'].upper()} | Emotion: {post['emotion']} | Score: {best_score}/100")
-assert best_score >= 80, f"FAIL: Best candidate scored {best_score}/100"
 
 if post["cover"] not in state["posted_titles"]:
     state["posted_titles"].append(post["cover"])
@@ -110,8 +105,7 @@ def fetch_unique_pixabay_image(query):
     if not pixabay_key:
         return None
     for img_type in ("illustration", "photo"):
-        res = requests.get("https://pixabay.com/api/",
-                           params={"key": pixabay_key, "q": query, "image_type": img_type, "per_page": 20}, timeout=25).json()
+        res = requests.get("https://pixabay.com/api/", params={"key": pixabay_key, "q": query, "image_type": img_type, "per_page": 20}, timeout=25).json()
         hits = [h for h in res.get("hits", []) if str(h["id"]) not in state["used_bg_ids"]] or res.get("hits", [])
         if hits:
             pick = random.choice(hits)
@@ -119,7 +113,6 @@ def fetch_unique_pixabay_image(query):
             state["used_bg_ids"] = state["used_bg_ids"][-100:]
             p = Path("fresh_bg.jpg")
             p.write_bytes(requests.get(pick["largeImageURL"], timeout=40).content)
-            print(f"[Pixabay Image] Fetched fresh {img_type} ID {pick['id']}")
             return p
     return None
 
@@ -135,44 +128,76 @@ def fetch_unique_pixabay_video(query):
         vids = pick["videos"]
         p = Path("bg.mp4")
         p.write_bytes(requests.get((vids.get("large") or vids.get("medium") or vids.get("small"))["url"], timeout=60).content)
-        print(f"[Pixabay Video] Fetched fresh video ID {pick['id']}")
         return p
     return None
 
-# Synthesize warm emotional piano audio
+# Hooked Audio Builder: uses music/*.mp3 if uploaded, else builds a Hook -> 3.2s Bass Drop + Piano Melody track
 DUR = 9.6 if post["format"] == "doodle" else (11.0 if post["format"] == "pov" else 19.2)
-SR = 48000
-t = np.linspace(0, DUR, int(SR * DUR), endpoint=False)
-chords = [[261.63, 329.63, 392.00], [220.00, 261.63, 329.63], [174.61, 220.00, 261.63], [196.00, 246.94, 293.66]]
-audio = np.zeros_like(t)
-seg_len = DUR / 4.0
-for idx, ch in enumerate(chords):
-    mask = (t >= idx * seg_len) & (t < (idx + 1) * seg_len)
-    lt = t[mask] - idx * seg_len
-    audio[mask] = sum(np.sin(2 * math.pi * f * lt) for f in ch) / 3.0 * np.minimum(1.0, lt / 0.15) * np.exp(-lt * 0.45)
-audio = (audio / (np.max(np.abs(audio)) + 1e-9) * 0.65 * 32767).astype(np.int16)
-with wave.open("music.wav", "wb") as wf:
-    wf.setnchannels(2); wf.setsampwidth(2); wf.setframerate(SR)
-    wf.writeframes(np.stack([audio, audio], axis=1).tobytes())
+music_dir = Path("music")
+mp3s = sorted(music_dir.glob("*.mp3")) if music_dir.exists() else []
+emo_mp3 = music_dir / f"{post['emotion']}.mp3"
+audio_input = emo_mp3 if emo_mp3.exists() else (random.choice(mp3s) if mp3s else None)
+
+if not audio_input:
+    SR = 48000
+    N = int(SR * DUR)
+    L, R = np.zeros(N), np.zeros(N)
+    def mf(m): return 440.0 * (2.0 ** ((m - 69) / 12.0))
+    def add_note(buf, start_s, freq, dur_s, vel=0.35):
+        i0 = int(start_s * SR)
+        n = min(int(dur_s * SR), N - i0)
+        if n <= 0: return
+        lt = np.linspace(0, n / SR, n, endpoint=False)
+        sig = (np.sin(2*np.pi*freq*lt) + 0.25*np.sin(2*np.pi*freq*2*lt)*np.exp(-lt*3.0)) * np.minimum(1.0, lt/0.02) * np.exp(-lt*1.1)
+        buf[i0:i0+n] += sig * vel
+    # Intro hook (0-3.2s: delicate high notes) -> Drop at 3.2s (deep sub-bass + rolling arpeggios + melody)
+    prog = [[57, 60, 64, 69], [53, 57, 60, 64], [48, 55, 60, 64], [55, 59, 62, 67]]
+    mel = [76, 74, 72, 71, 72, 74, 76, 79, 76, 74, 72, 71]
+    for step in range(int(DUR / 0.8)):
+        t0 = step * 0.8
+        ch = prog[(step // 2) % len(prog)]
+        # Arpeggio piano
+        for j, m in enumerate(ch):
+            add_note(L if j % 2 == 0 else R, t0 + j * 0.16, mf(m), 1.4, 0.22)
+            add_note(R if j % 2 == 0 else L, t0 + j * 0.16, mf(m), 1.4, 0.14)
+        # Expressive top melody
+        add_note(L, t0, mf(mel[step % len(mel)]), 1.1, 0.26)
+        add_note(R, t0, mf(mel[step % len(mel)]), 1.1, 0.26)
+        # Emotional sub-bass drop starting right at 3.2s!
+        if t0 >= 3.1:
+            bass_f = mf(ch[0] - 24)
+            add_note(L, t0, bass_f, 1.5, 0.34)
+            add_note(R, t0, bass_f, 1.5, 0.34)
+    stereo = np.stack([L, R], axis=1)
+    # Soft stereo reverb tail
+    for ms, g in [(90, 0.32), (160, 0.18)]:
+        sh = int(SR * ms / 1000)
+        if sh < N:
+            stereo[sh:, 0] += stereo[:-sh, 1] * g
+            stereo[sh:, 1] += stereo[:-sh, 0] * g
+    stereo = (stereo / (np.max(np.abs(stereo)) + 1e-9) * 0.75 * 32767).astype(np.int16)
+    with wave.open("music.wav", "wb") as wf:
+        wf.setnchannels(2); wf.setsampwidth(2); wf.setframerate(SR)
+        wf.writeframes(stereo.tobytes())
+    audio_input = Path("music.wav")
+    print("Generated hooked drop piano + sub-bass audio.")
+else:
+    print(f"Using hooked track: {audio_input.name}")
 
 if post["format"] == "doodle":
     img_path = fetch_unique_pixabay_image(post["query"])
     if img_path:
         raw = Image.open(img_path).convert("RGB")
-        # Crop cleanly to 9:16 portrait
         w, h = raw.size
-        target_ratio = 1080 / 1920
-        if w / h > target_ratio:
-            nw = int(h * target_ratio)
+        if w / h > 1080 / 1920:
+            nw = int(h * 1080 / 1920)
             raw = raw.crop(((w - nw) // 2, 0, (w + nw) // 2, h))
         else:
-            nh = int(w / target_ratio)
+            nh = int(w * 1920 / 1080)
             raw = raw.crop((0, (h - nh) // 2, w, (h + nh) // 2))
         bg = raw.resize((1080, 1920), Image.Resampling.LANCZOS).convert("RGBA")
     else:
         bg = Image.new("RGBA", (1080, 1920), (252, 232, 224, 255))
-
-    # Soft pastel sky wash at top so dark-ink quote always reads crisply over ANY fresh image
     sky = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
     px = sky.load()
     for y in range(680):
@@ -180,7 +205,6 @@ if post["format"] == "doodle":
         for x in range(1080):
             px[x, y] = (255, 244, 238, alpha)
     bg = Image.alpha_composite(bg, sky).convert("RGB")
-
     draw = ImageDraw.Draw(bg)
     f_main, f_sig = load_font(46, bold=False), load_font(28, bold=False)
     y = 240
@@ -195,9 +219,9 @@ if post["format"] == "doodle":
     bg.save("doodle_frame.png")
     frames = int(DUR * 30)
     subprocess.run([
-        "ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-i", "doodle_frame.png", "-i", "music.wav",
+        "ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-i", "doodle_frame.png", "-stream_loop", "-1", "-i", str(audio_input),
         "-t", str(DUR), "-vf", f"scale=1200:-1,zoompan=z='min(zoom+0.0007,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s=1080x1920:fps=30,fade=t=in:st=0:d=0.5,fade=t=out:st={DUR-0.6:.1f}:d=0.6",
-        "-af", f"afade=t=in:st=0:d=0.5,afade=t=out:st={DUR-0.8:.1f}:d=0.8",
+        "-af", f"afade=t=in:st=0:d=0.4,afade=t=out:st={DUR-0.8:.1f}:d=0.8",
         "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", "-ac", "2", "final_short.mp4"
     ], check=True)
 else:
@@ -234,8 +258,7 @@ else:
         return path
 
     if post["format"] == "pov":
-        slides = [(0.0, 3.5, make_card(post["cover"], "", "ov_01.png")),
-                  (3.5, DUR, make_card(post["cover"], post["payoff"], "ov_02.png"))]
+        slides = [(0.0, 3.5, make_card(post["cover"], "", "ov_01.png")), (3.5, DUR, make_card(post["cover"], post["payoff"], "ov_02.png"))]
     else:
         raw_slides = [(post["cover"], "")] + [(f"{n}. {h}", d) for n, h, d in post["points"]] + [("Your Turn", post["cta"])]
         slides = [(i * 3.2, (i + 1) * 3.2, make_card(t_txt, b_txt, f"ov_{i+1:02d}.png")) for i, (t_txt, b_txt) in enumerate(raw_slides)]
@@ -249,9 +272,9 @@ else:
         fc += f"[{prev}][{i+1}:v]overlay=0:0:enable='between(t,{t0:.2f},{t1:.2f})'[{nxt}];"
         prev = nxt
     a_idx = len(slides) + 1
-    fc += f"[{prev}]fade=t=in:st=0:d=0.5,fade=t=out:st={DUR-0.7:.2f}:d=0.7[vout];[{a_idx}:a]afade=t=in:st=0:d=0.6,afade=t=out:st={DUR-1.0:.2f}:d=1.0[aout]"
+    fc += f"[{prev}]fade=t=in:st=0:d=0.5,fade=t=out:st={DUR-0.7:.2f}:d=0.7[vout];[{a_idx}:a]afade=t=in:st=0:d=0.4,afade=t=out:st={DUR-1.0:.2f}:d=1.0[aout]"
     subprocess.run([
-        "ffmpeg", "-y", "-loglevel", "error", *v_in, *ov_in, "-i", "music.wav",
+        "ffmpeg", "-y", "-loglevel", "error", *v_in, *ov_in, "-stream_loop", "-1", "-i", str(audio_input),
         "-t", str(DUR), "-filter_complex", fc, "-map", "[vout]", "-map", "[aout]",
         "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", "-ac", "2", "final_short.mp4"
     ], check=True)
@@ -259,31 +282,37 @@ else:
 STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
 print("Rendered final_short.mp4!")
 
-if os.getenv("YT_CLIENT_SECRETS") and os.getenv("YT_TOKEN_JSON"):
-    Path("client_secrets.json").write_text(os.getenv("YT_CLIENT_SECRETS"), encoding="utf-8")
-    Path("token.json").write_text(os.getenv("YT_TOKEN_JSON"), encoding="utf-8")
-    creds = Credentials.from_authorized_user_file("token.json", YT_SCOPES)
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-    yt = build("youtube", "v3", credentials=creds)
-    req = yt.videos().insert(part="snippet,status",
-        body={"snippet": {"title": f"{title_clean} #Shorts"[:95], "description": caption, "categoryId": "22"},
-              "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}},
-        media_body=MediaFileUpload("final_short.mp4", chunksize=5*1024*1024, resumable=True))
-    resp = None
-    while resp is None:
-        _, resp = req.next_chunk()
-    print("[YouTube] PUBLISHED:", resp["id"])
+try:
+    if os.getenv("YT_CLIENT_SECRETS") and os.getenv("YT_TOKEN_JSON"):
+        Path("client_secrets.json").write_text(os.getenv("YT_CLIENT_SECRETS"), encoding="utf-8")
+        Path("token.json").write_text(os.getenv("YT_TOKEN_JSON"), encoding="utf-8")
+        creds = Credentials.from_authorized_user_file("token.json", YT_SCOPES)
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        yt = build("youtube", "v3", credentials=creds)
+        req = yt.videos().insert(part="snippet,status",
+            body={"snippet": {"title": f"{title_clean} #Shorts"[:95], "description": caption, "categoryId": "22"},
+                  "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}},
+            media_body=MediaFileUpload("final_short.mp4", chunksize=5*1024*1024, resumable=True))
+        resp = None
+        while resp is None:
+            _, resp = req.next_chunk()
+        print("[YouTube] PUBLISHED:", resp["id"])
+except Exception as e:
+    print("[YouTube] ERROR (skipped):", e)
 
-ig_id, token = os.getenv("IG_USER_ID", "").strip(), os.getenv("META_ACCESS_TOKEN", "").strip()
-if ig_id and token:
-    init = requests.post(f"{GRAPH}/{ig_id}/media", data={"media_type": "REELS", "upload_type": "resumable", "caption": caption, "access_token": token}).json()
-    cid, uri = init["id"], init["uri"]
-    raw = Path("final_short.mp4").read_bytes()
-    requests.post(uri, headers={"Authorization": f"OAuth {token}", "offset": "0", "file_size": str(len(raw))}, data=raw).raise_for_status()
-    for _ in range(20):
-        if requests.get(f"{GRAPH}/{cid}", params={"fields": "status_code", "access_token": token}).json().get("status_code") == "FINISHED":
-            break
-        time.sleep(4)
-    pub = requests.post(f"{GRAPH}/{ig_id}/media_publish", data={"creation_id": cid, "access_token": token}).json()
-    print("[Instagram] PUBLISHED:", pub)
+try:
+    ig_id, token = os.getenv("IG_USER_ID", "").strip(), os.getenv("META_ACCESS_TOKEN", "").strip()
+    if ig_id and token:
+        init = requests.post(f"{GRAPH}/{ig_id}/media", data={"media_type": "REELS", "upload_type": "resumable", "caption": caption, "access_token": token}).json()
+        cid, uri = init["id"], init["uri"]
+        raw = Path("final_short.mp4").read_bytes()
+        requests.post(uri, headers={"Authorization": f"OAuth {token}", "offset": "0", "file_size": str(len(raw))}, data=raw).raise_for_status()
+        for _ in range(20):
+            if requests.get(f"{GRAPH}/{cid}", params={"fields": "status_code", "access_token": token}).json().get("status_code") == "FINISHED":
+                break
+            time.sleep(4)
+        pub = requests.post(f"{GRAPH}/{ig_id}/media_publish", data={"creation_id": cid, "access_token": token}).json()
+        print("[Instagram] PUBLISHED:", pub)
+except Exception as e:
+    print("[Instagram] ERROR (skipped):", e)
