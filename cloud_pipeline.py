@@ -14,58 +14,74 @@ YT_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 # 1. Ramp Schedule Gate: Days 1-2 = 2x/day (12:30 & 18:30 IST); Day 3+ = 4x/day
 STATE_FILE = Path("schedule_state.json")
 state = json.loads(STATE_FILE.read_text(encoding="utf-8")) if STATE_FILE.exists() else {
-    "start_date": datetime.date.today().isoformat(), "posted_titles": [], "used_bg_ids": [], "last_emotion": "", "last_format": ""
+    "start_date": datetime.date.today().isoformat(),
+    "posted_titles": [], "used_bg_ids": [], "used_music_sigs": [],
+    "last_emotion": "", "last_format": ""
 }
-state.setdefault("used_bg_ids", [])
+for k in ("posted_titles", "used_bg_ids", "used_music_sigs"):
+    state.setdefault(k, [])
+
 day_num = (datetime.date.today() - datetime.date.fromisoformat(state["start_date"])).days + 1
 utc_hour = datetime.datetime.now(datetime.timezone.utc).hour
 if os.getenv("GITHUB_EVENT_NAME") == "schedule" and day_num <= 2 and utc_hour not in (7, 13):
     print(f"Day {day_num} (2x/day phase): skipping slot at {utc_hour:02d}:00 UTC.")
     sys.exit(0)
 
-# 2. Multi-Format Content Bank (Doodle Couple + 4-Slide Series + 2-Beat POV)
+# 2. Multi-Format Content Bank + Rotating Visual Queries
+QUERY_POOL = {
+    "romantic":   ["couple sunset silhouette", "cherry blossom aesthetic", "warm candle lights", "golden hour beach walk"],
+    "trust":      ["cozy coffee rain window", "starry night couple", "warm fireplace aesthetic", "autumn forest path"],
+    "healing":    ["calm ocean waves sunrise", "misty mountain dawn", "sunlight through leaves", "peaceful lake reflection"],
+    "heartbreak": ["rainy city night neon", "lonely street rain", "stormy clouds twilight", "raindrops window bokeh"],
+    "missing":    ["night driving city lights", "moonlight clouds sky", "twilight city skyline", "train window evening"],
+}
+
 CONTENT = [
-    {"format": "doodle", "emotion": "romantic", "query": "couple sunset anime illustration love",
+    {"format": "doodle", "emotion": "romantic",
      "cover": "I don't know what you did to me,\nI just feel at home whenever I'm with you",
      "cta": "Send this to the person who feels like home."},
-    {"format": "doodle", "emotion": "trust", "query": "couple night stars sky aesthetic",
+    {"format": "doodle", "emotion": "trust",
      "cover": "You don't need a loud love,\njust someone who stays quiet with you at 2 AM",
      "cta": "Tag or send this to your 2 AM person."},
-    {"format": "doodle", "emotion": "romantic", "query": "couple rain umbrella street aesthetic",
+    {"format": "doodle", "emotion": "romantic",
      "cover": "Rainy evenings feel warmer\nwhen the right person holds the umbrella",
      "cta": "Send this to someone you want to walk in the rain with."},
-    {"format": "doodle", "emotion": "missing", "query": "aesthetic pastel clouds twilight sky",
+    {"format": "doodle", "emotion": "missing",
      "cover": "Even on my busiest days,\nmy mind still finds a quiet second to miss you",
      "cta": "Send this to the person on your mind right now."},
-    {"format": "series", "emotion": "trust", "c1": (18, 12, 28), "c2": (64, 34, 62), "accent": (253, 224, 171), "query": "coffee aesthetic cozy",
+    {"format": "series", "emotion": "trust", "c1": (18, 12, 28), "c2": (64, 34, 62), "accent": (253, 224, 171),
      "cover": "4 Quiet Signs Someone Truly Loves You",
      "points": [("01", "They remember the small things", "Not just birthdays—what calms you down on a hard day."),
                 ("02", "They stay calm when you are upset", "Real love never turns your worst day into a competition."),
                 ("03", "Their actions match their promises", "Consistency replaces guessing where you stand."),
                 ("04", "They protect your peace in private", "How they speak about you when you are not there says everything.")],
      "cta": "Send this to the person who does #1.\nComment which sign means the most (1-4)."},
-    {"format": "series", "emotion": "healing", "c1": (8, 32, 36), "c2": (22, 78, 82), "accent": (153, 246, 228), "query": "ocean waves sunrise",
+    {"format": "series", "emotion": "healing", "c1": (8, 32, 36), "c2": (22, 78, 82), "accent": (153, 246, 228),
      "cover": "4 Things Never To Beg For In Love",
      "points": [("01", "Never beg for basic effort", "Someone who wants you makes time, not endless excuses."),
                 ("02", "Never beg to be chosen", "You deserve certainty even on ordinary days."),
                 ("03", "Never beg for respect", "Love without respect is just attachment in disguise."),
                 ("04", "Never beg for honesty", "Real love feels safe—never like being a detective.")],
      "cta": "Save this reminder and send it to someone who needs #2 today."},
-    {"format": "series", "emotion": "heartbreak", "c1": (10, 15, 35), "c2": (30, 48, 84), "accent": (186, 230, 253), "query": "rain window night",
+    {"format": "series", "emotion": "heartbreak", "c1": (10, 15, 35), "c2": (30, 48, 84), "accent": (186, 230, 253),
      "cover": "4 Hard Truths About Letting Go",
      "points": [("01", "Closure comes from you, not them", "Waiting for an apology only delays your own peace."),
                 ("02", "Missing them does not mean go back", "Sometimes you miss the version of them you hoped they were."),
                 ("03", "Stop watering dead roots", "If only one person is fighting for it, it is already over."),
                 ("04", "Outgrowing someone is not a failure", "Some people arrive to teach you what you deserve.")],
      "cta": "Send this to a friend who needs to hear #3 today.\nSave this for later."},
-    {"format": "pov", "emotion": "heartbreak", "c1": (16, 16, 28), "c2": (48, 42, 74), "accent": (199, 210, 254), "query": "lonely street rain night",
+    {"format": "pov", "emotion": "heartbreak", "c1": (16, 16, 28), "c2": (48, 42, 74), "accent": (199, 210, 254),
      "cover": "You never realize how heavy silence is...",
      "payoff": "until the person you told everything to becomes a stranger.",
      "cta": "Send this to someone who understands this feeling."},
-    {"format": "pov", "emotion": "healing", "c1": (12, 28, 38), "c2": (36, 72, 92), "accent": (167, 243, 208), "query": "calm forest morning mist",
+    {"format": "pov", "emotion": "healing", "c1": (12, 28, 38), "c2": (36, 72, 92), "accent": (167, 243, 208),
      "cover": "One day you will thank yourself...",
      "payoff": "for walking away from the love that kept costing your peace.",
      "cta": "Save this and send it to a friend who is healing."},
+    {"format": "pov", "emotion": "missing", "c1": (22, 14, 38), "c2": (68, 42, 94), "accent": (233, 213, 255),
+     "cover": "Some people stay in your heart...",
+     "payoff": "long after they stop appearing in your daily life.",
+     "cta": "Send this to someone awake thinking about the past."},
 ]
 
 def viral_score(item):
@@ -93,6 +109,7 @@ state["last_emotion"], state["last_format"] = post["emotion"], post["format"]
 title_clean = post["cover"].replace("\n", " ")
 caption = f"{title_clean}\n\n{post['cta']}\n\n#lovequotes #relationships #{post['emotion']} #reels #shorts"
 pixabay_key = os.getenv("PIXABAY_API_KEY", "").strip()
+query = random.choice(QUERY_POOL[post["emotion"]])
 
 def load_font(size, bold=True):
     for p in (["/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf" if not bold else "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
@@ -101,91 +118,130 @@ def load_font(size, bold=True):
             return ImageFont.truetype(p, size)
     return ImageFont.load_default()
 
-def fetch_unique_pixabay_image(query):
+def fetch_unique_pixabay_image(q):
     if not pixabay_key:
         return None
     for img_type in ("illustration", "photo"):
-        res = requests.get("https://pixabay.com/api/", params={"key": pixabay_key, "q": query, "image_type": img_type, "per_page": 20}, timeout=25).json()
+        res = requests.get("https://pixabay.com/api/", params={"key": pixabay_key, "q": q, "image_type": img_type, "per_page": 25}, timeout=25).json()
         hits = [h for h in res.get("hits", []) if str(h["id"]) not in state["used_bg_ids"]] or res.get("hits", [])
         if hits:
             pick = random.choice(hits)
-            state["used_bg_ids"].append(str(pick["id"]))
-            state["used_bg_ids"] = state["used_bg_ids"][-100:]
+            state["used_bg_ids"] = (state["used_bg_ids"] + [str(pick["id"])])[-500:]
             p = Path("fresh_bg.jpg")
             p.write_bytes(requests.get(pick["largeImageURL"], timeout=40).content)
+            print(f"[Pixabay Image] Unique {img_type} ID {pick['id']} ({q})")
             return p
     return None
 
-def fetch_unique_pixabay_video(query):
+def fetch_unique_pixabay_video(q):
     if not pixabay_key:
         return None
-    res = requests.get("https://pixabay.com/api/videos/", params={"key": pixabay_key, "q": query, "per_page": 20}, timeout=25).json()
+    res = requests.get("https://pixabay.com/api/videos/", params={"key": pixabay_key, "q": q, "per_page": 25}, timeout=25).json()
     hits = [h for h in res.get("hits", []) if str(h["id"]) not in state["used_bg_ids"]] or res.get("hits", [])
     if hits:
         pick = random.choice(hits)
-        state["used_bg_ids"].append(str(pick["id"]))
-        state["used_bg_ids"] = state["used_bg_ids"][-100:]
+        state["used_bg_ids"] = (state["used_bg_ids"] + [str(pick["id"])])[-500:]
         vids = pick["videos"]
         p = Path("bg.mp4")
         p.write_bytes(requests.get((vids.get("large") or vids.get("medium") or vids.get("small"))["url"], timeout=60).content)
+        print(f"[Pixabay Video] Unique video ID {pick['id']} ({q})")
         return p
     return None
 
-# Hooked Audio Builder: uses music/*.mp3 if uploaded, else builds a Hook -> 3.2s Bass Drop + Piano Melody track
+# 3. Unique Hooked Music Engine (Never repeats the same track/progression)
 DUR = 9.6 if post["format"] == "doodle" else (11.0 if post["format"] == "pov" else 19.2)
 music_dir = Path("music")
 mp3s = sorted(music_dir.glob("*.mp3")) if music_dir.exists() else []
-emo_mp3 = music_dir / f"{post['emotion']}.mp3"
-audio_input = emo_mp3 if emo_mp3.exists() else (random.choice(mp3s) if mp3s else None)
+unused_mp3s = [m for m in mp3s if m.name not in state["used_music_sigs"]]
+audio_input = random.choice(unused_mp3s or mp3s) if mp3s else None
 
-if not audio_input:
+if audio_input:
+    state["used_music_sigs"] = (state["used_music_sigs"] + [audio_input.name])[-20:]
+    print(f"[Audio] Using unique MP3: {audio_input.name}")
+else:
+    # Procedural Hook-to-Drop Synth: varies key, progression, BPM, timbre, and ambience every run
+    PROGRESSIONS = [
+        ("Am-F-C-G",   [[57,60,64,69], [53,57,60,64], [48,55,60,64], [55,59,62,67]], [76,74,72,71,72,76,79,76]),
+        ("Fmaj-G-Em-Am", [[53,57,60,64], [55,59,62,67], [52,55,59,64], [57,60,64,69]], [72,74,76,79,76,74,72,69]),
+        ("Dm-Bb-F-C",  [[50,53,57,62], [46,50,53,58], [53,57,60,65], [48,52,55,60]], [74,72,70,69,70,74,77,74]),
+        ("Em-C-G-D",   [[52,55,59,64], [48,52,55,60], [55,59,62,67], [50,54,57,62]], [76,74,71,67,71,74,78,76]),
+    ]
+    TIMBRES = ["felt_piano", "rhodes_bell", "warm_strings"]
+    BPMS = [66, 72, 78, 84]
+    SHIFTS = [-2, 0, 2, 4]  # semitone transpose for unique key every video
+
+    for _ in range(12):
+        prog_name, prog, mel = random.choice(PROGRESSIONS)
+        timbre, bpm, shift = random.choice(TIMBRES), random.choice(BPMS), random.choice(SHIFTS)
+        sig = f"{prog_name}_{timbre}_{bpm}_{shift}"
+        if sig not in state["used_music_sigs"]:
+            break
+    state["used_music_sigs"] = (state["used_music_sigs"] + [sig])[-30:]
+
     SR = 48000
     N = int(SR * DUR)
     L, R = np.zeros(N), np.zeros(N)
-    def mf(m): return 440.0 * (2.0 ** ((m - 69) / 12.0))
-    def add_note(buf, start_s, freq, dur_s, vel=0.35):
+    beat = 60.0 / bpm
+    def mf(m): return 440.0 * (2.0 ** (((m + shift) - 69) / 12.0))
+    def synth_note(buf, start_s, freq, dur_s, vel):
         i0 = int(start_s * SR)
         n = min(int(dur_s * SR), N - i0)
         if n <= 0: return
         lt = np.linspace(0, n / SR, n, endpoint=False)
-        sig = (np.sin(2*np.pi*freq*lt) + 0.25*np.sin(2*np.pi*freq*2*lt)*np.exp(-lt*3.0)) * np.minimum(1.0, lt/0.02) * np.exp(-lt*1.1)
+        if timbre == "felt_piano":
+            sig = (np.sin(2*np.pi*freq*lt) + 0.25*np.sin(4*np.pi*freq*lt)*np.exp(-lt*3.0)) * np.minimum(1.0, lt/0.02) * np.exp(-lt*1.1)
+        elif timbre == "rhodes_bell":
+            sig = (np.sin(2*np.pi*freq*lt) + 0.35*np.sin(6*np.pi*freq*lt)*np.exp(-lt*5.0)) * np.minimum(1.0, lt/0.01) * np.exp(-lt*1.4)
+        else:
+            sig = (0.6*np.sin(2*np.pi*freq*lt) + 0.4*np.sin(2*np.pi*(freq*1.004)*lt)) * np.minimum(1.0, lt/0.25) * np.exp(-lt*0.55)
         buf[i0:i0+n] += sig * vel
-    # Intro hook (0-3.2s: delicate high notes) -> Drop at 3.2s (deep sub-bass + rolling arpeggios + melody)
-    prog = [[57, 60, 64, 69], [53, 57, 60, 64], [48, 55, 60, 64], [55, 59, 62, 67]]
-    mel = [76, 74, 72, 71, 72, 74, 76, 79, 76, 74, 72, 71]
-    for step in range(int(DUR / 0.8)):
-        t0 = step * 0.8
-        ch = prog[(step // 2) % len(prog)]
-        # Arpeggio piano
+
+    step_t = beat * 0.75
+    steps = int(DUR / step_t)
+    for step in range(steps):
+        t0 = step * step_t
+        ch = prog[(step // 4) % len(prog)]
         for j, m in enumerate(ch):
-            add_note(L if j % 2 == 0 else R, t0 + j * 0.16, mf(m), 1.4, 0.22)
-            add_note(R if j % 2 == 0 else L, t0 + j * 0.16, mf(m), 1.4, 0.14)
-        # Expressive top melody
-        add_note(L, t0, mf(mel[step % len(mel)]), 1.1, 0.26)
-        add_note(R, t0, mf(mel[step % len(mel)]), 1.1, 0.26)
-        # Emotional sub-bass drop starting right at 3.2s!
+            synth_note(L if j % 2 == 0 else R, t0 + j * (beat * 0.18), mf(m), beat * 2.0, 0.20)
+            synth_note(R if j % 2 == 0 else L, t0 + j * (beat * 0.18), mf(m), beat * 2.0, 0.14)
+        m_note = mel[step % len(mel)]
+        synth_note(L, t0, mf(m_note), beat * 1.6, 0.26)
+        synth_note(R, t0, mf(m_note), beat * 1.6, 0.26)
+        # Hook Drop at 3.2s: deep sub-bass + soft lo-fi heartbeat kick!
         if t0 >= 3.1:
-            bass_f = mf(ch[0] - 24)
-            add_note(L, t0, bass_f, 1.5, 0.34)
-            add_note(R, t0, bass_f, 1.5, 0.34)
+            bf = mf(ch[0] - 24)
+            synth_note(L, t0, bf, beat * 2.2, 0.34)
+            synth_note(R, t0, bf, beat * 2.2, 0.34)
+            if step % 2 == 0:
+                i0 = int(t0 * SR)
+                kn = min(int(0.18 * SR), N - i0)
+                if kn > 0:
+                    kt = np.linspace(0, kn / SR, kn, endpoint=False)
+                    kick = np.sin(2 * np.pi * (95 * np.exp(-kt * 18) + 38) * kt) * np.exp(-kt * 16) * 0.38
+                    L[i0:i0+kn] += kick; R[i0:i0+kn] += kick
+
     stereo = np.stack([L, R], axis=1)
-    # Soft stereo reverb tail
-    for ms, g in [(90, 0.32), (160, 0.18)]:
+    if post["emotion"] in ("heartbreak", "missing"):
+        rng = np.random.default_rng(int(time.time()))
+        rain = rng.normal(0, 1, (N, 2))
+        ker = np.ones(16) / 16.0
+        stereo[:, 0] += np.convolve(rain[:, 0], ker, mode="same") * 0.028
+        stereo[:, 1] += np.convolve(rain[:, 1], ker, mode="same") * 0.028
+    for ms, g in [(90, 0.32), (165, 0.18)]:
         sh = int(SR * ms / 1000)
         if sh < N:
             stereo[sh:, 0] += stereo[:-sh, 1] * g
             stereo[sh:, 1] += stereo[:-sh, 0] * g
-    stereo = (stereo / (np.max(np.abs(stereo)) + 1e-9) * 0.75 * 32767).astype(np.int16)
+    stereo = (stereo / (np.max(np.abs(stereo)) + 1e-9) * 0.78 * 32767).astype(np.int16)
     with wave.open("music.wav", "wb") as wf:
         wf.setnchannels(2); wf.setsampwidth(2); wf.setframerate(SR)
         wf.writeframes(stereo.tobytes())
     audio_input = Path("music.wav")
-    print("Generated hooked drop piano + sub-bass audio.")
-else:
-    print(f"Using hooked track: {audio_input.name}")
+    print(f"[Audio] Synthesized unique hooked track: {sig}")
 
+# 4. Render Unique Visual Style + Motion
 if post["format"] == "doodle":
-    img_path = fetch_unique_pixabay_image(post["query"])
+    img_path = fetch_unique_pixabay_image(query)
     if img_path:
         raw = Image.open(img_path).convert("RGB")
         w, h = raw.size
@@ -215,18 +271,23 @@ if post["format"] == "doodle":
     draw.line([(585, y + 25), (750, y + 25)], fill=(70, 58, 62), width=2)
     hx, hy = 540, y + 25
     draw.polygon([(hx, hy + 14), (hx - 15, hy - 2), (hx - 7, hy - 12), (hx, hy - 5), (hx + 7, hy - 12), (hx + 15, hy - 2)], fill=(214, 69, 80))
-    draw.text((540, 1835), "—  Daily Love Notes  —", fill=(255, 255, 255), font=f_sig, anchor="mm")
+    draw.text((540, 1835), "—  Heartful Quotes  —", fill=(255, 255, 255), font=f_sig, anchor="mm")
     bg.save("doodle_frame.png")
     frames = int(DUR * 30)
+    motion = random.choice([
+        f"scale=1200:-1,zoompan=z='min(zoom+0.0007,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s=1080x1920:fps=30",
+        f"scale=1200:-1,zoompan=z='1.08-0.0007*on':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s=1080x1920:fps=30",
+        f"scale=1200:-1,zoompan=z='1.08':x='(iw-iw/zoom)*(on/{frames})':y='ih/2-(ih/zoom/2)':d={frames}:s=1080x1920:fps=30",
+    ])
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-i", "doodle_frame.png", "-stream_loop", "-1", "-i", str(audio_input),
-        "-t", str(DUR), "-vf", f"scale=1200:-1,zoompan=z='min(zoom+0.0007,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s=1080x1920:fps=30,fade=t=in:st=0:d=0.5,fade=t=out:st={DUR-0.6:.1f}:d=0.6",
+        "-t", str(DUR), "-vf", f"{motion},fade=t=in:st=0:d=0.5,fade=t=out:st={DUR-0.6:.1f}:d=0.6",
         "-af", f"afade=t=in:st=0:d=0.4,afade=t=out:st={DUR-0.8:.1f}:d=0.8",
         "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", "-ac", "2", "final_short.mp4"
     ], check=True)
 else:
     accent = tuple(post["accent"])
-    bg_mp4 = fetch_unique_pixabay_video(post["query"])
+    bg_mp4 = fetch_unique_pixabay_video(query)
     if not bg_mp4:
         c1, c2 = post["c1"], post["c2"]
         img = Image.new("RGBA", (1080, 1920))
@@ -238,11 +299,15 @@ else:
                 px[x, y] = rgb
         img.convert("RGB").save("designed_bg.png")
 
+    card_style = random.choice(["glass_card", "editorial_bar"])
     def make_card(title, body="", path="ov.png"):
-        base = Image.new("RGBA", (1080, 1920), (0, 0, 0, 95))
+        base = Image.new("RGBA", (1080, 1920), (0, 0, 0, 105))
         cd = ImageDraw.Draw(base)
         top, bot = 440, 1480
-        cd.rounded_rectangle([85, top, 995, bot], radius=44, fill=(12, 14, 22, 160), outline=accent + (150,), width=3)
+        if card_style == "glass_card":
+            cd.rounded_rectangle([85, top, 995, bot], radius=44, fill=(12, 14, 22, 160), outline=accent + (155,), width=3)
+        else:
+            cd.rectangle([95, top + 60, 105, bot - 60], fill=accent + (235,))
         cd.text((540, top + 75), post["emotion"].upper(), fill=accent + (255,), font=load_font(28), anchor="mm")
         cd.line([(430, top + 110), (650, top + 110)], fill=accent + (200,), width=3)
         y = top + 200
@@ -254,6 +319,7 @@ else:
             for ln in textwrap.wrap(body, width=28):
                 cd.text((540, y), ln, fill=(230, 232, 240, 255), font=load_font(38, bold=False), anchor="mm")
                 y += 54
+        cd.text((540, 1835), "—  Heartful Quotes  —", fill=(255, 255, 255, 210), font=load_font(26, bold=False), anchor="mm")
         base.save(path)
         return path
 
