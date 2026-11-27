@@ -4,11 +4,16 @@
     "4 Quiet Signs Someone Truly Loves You",
     "4 Hard Truths About Letting Go",
     "4 Things Never To Beg For In Love",
-    "I don't know what you did to me,\nI just feel at home whenever I'm with you"
+    "I don't know what you did to me,\nI just feel at home whenever I'm with you",
+    "You never realize how heavy silence is..."
   ],
-  "last_emotion": "romantic",
+  "last_emotion": "heartbreak",
   "used_bg_ids": [
-    "10099776"
+    "10099776",
+    "380728"
   ],
-  "last_format": "doodle"
+  "last_format": "pov",
+  "used_music_sigs": [
+    "Em-C-G-D_felt_piano_66_-2"
+  ]
 }
