@@ -5,15 +5,18 @@
     "4 Hard Truths About Letting Go",
     "4 Things Never To Beg For In Love",
     "I don't know what you did to me,\nI just feel at home whenever I'm with you",
-    "You never realize how heavy silence is..."
+    "You never realize how heavy silence is...",
+    "You don't need a loud love,\njust someone who stays quiet with you at 2 AM"
   ],
-  "last_emotion": "heartbreak",
+  "last_emotion": "trust",
   "used_bg_ids": [
     "10099776",
-    "380728"
+    "380728",
+    "8599321"
   ],
-  "last_format": "pov",
+  "last_format": "doodle",
   "used_music_sigs": [
-    "Em-C-G-D_felt_piano_66_-2"
+    "Em-C-G-D_felt_piano_66_-2",
+    "Am-F-C-G_warm_strings_66_-2"
   ]
 }
