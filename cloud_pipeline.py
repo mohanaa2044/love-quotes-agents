@@ -1,4 +1,4 @@
-﻿import datetime, json, math, os, random, re, subprocess, sys, textwrap, time, wave
+import datetime, json, math, os, random, re, subprocess, sys, textwrap, time, wave
 import numpy as np
 import requests
 from pathlib import Path
@@ -265,6 +265,40 @@ def load_font(size, italic=False, bold=True):
             return ImageFont.truetype(p, size)
     return ImageFont.load_default()
 
+def draw_safe_lines(draw, text, y_start, max_w=820, max_h=620, start_size=44, italic=False, bold=False, fill=(34, 26, 30)):
+    # Auto-wrap & shrink font until EVERY line fits inside safe margins (130px left/right)
+    for size in range(start_size, 24, -2):
+        font = load_font(size, italic=italic, bold=bold)
+        lines = []
+        for para in text.split("\n"):
+            p_clean = para.strip()
+            if not p_clean:
+                lines.append("")
+                continue
+            words, cur = p_clean.split(), ""
+            for w in words:
+                cand = f"{cur} {w}".strip()
+                if draw.textbbox((0, 0), cand, font=font)[2] <= max_w:
+                    cur = cand
+                else:
+                    if cur: lines.append(cur)
+                    cur = w
+            if cur: lines.append(cur)
+        line_h = int(size * 1.35)
+        total_h = len(lines) * line_h
+        max_line_w = max((draw.textbbox((0, 0), ln, font=font)[2] for ln in lines if ln), default=0)
+        if max_line_w <= max_w and total_h <= max_h:
+            y = y_start
+            for ln in lines:
+                if ln:
+                    bbox = draw.textbbox((540, y), ln, font=font, anchor="mm")
+                    assert bbox[0] >= 100 and bbox[2] <= 980, f"FAIL: Text clipped X {bbox}"
+                    draw.text((540, y), ln, fill=fill, font=font, anchor="mm")
+                y += line_h
+            print(f"[Layout Validator] PASS: {len(lines)} lines, max width {max_line_w}px/{max_w}px, font {size}px")
+            return y
+    raise RuntimeError("FAIL: Text exceeded safe bounds even at minimum font size.")
+
 def fetch_unique_pixabay_image(q, img_type="photo"):
     if not pixabay_key:
         return None
@@ -388,7 +422,7 @@ if post["format"] == "parchment_journal":
             y += 52
         y += 48
     draw.line([(360, 1780), (720, 1780)], fill=(120, 102, 84), width=2)
-    draw.text((540, 1830), "—  Heartful Quotes  —", fill=(72, 58, 48), font=f_sig, anchor="mm")
+    draw.text((540, 1740), "—  Heartful Quotes  —", fill=(72, 58, 48), font=f_sig, anchor="mm")
     paper.save("journal_frame.png")
     frames = int(DUR * 30)
     subprocess.run([
@@ -421,19 +455,14 @@ elif post["format"] in ("doodle", "sunset_sky"):
             px[x, y] = (255, 240, 232, alpha)
     bg = Image.alpha_composite(bg, sky).convert("RGB")
     draw = ImageDraw.Draw(bg)
-    f_main = load_font(44, italic=(post["format"] == "sunset_sky"), bold=False)
     f_sig = load_font(26, italic=False, bold=False)
-    y = 230
-    for ln in post["cover"].split("\n"):
-        if ln.strip():
-            draw.text((540, y), ln.strip(), fill=(34, 26, 30), font=f_main, anchor="mm")
-        y += 60
+    y = draw_safe_lines(draw, post["cover"], y_start=250, max_w=800, max_h=440, start_size=44, italic=(post["format"] == "sunset_sky"), bold=False, fill=(34, 26, 30))
     if post["format"] == "doodle":
         draw.line([(330, y + 20), (495, y + 20)], fill=(70, 58, 62), width=2)
         draw.line([(585, y + 20), (750, y + 20)], fill=(70, 58, 62), width=2)
         hx, hy = 540, y + 20
         draw.polygon([(hx, hy + 14), (hx - 15, hy - 2), (hx - 7, hy - 12), (hx, hy - 5), (hx + 7, hy - 12), (hx + 15, hy - 2)], fill=(214, 69, 80))
-    draw.text((540, 1835), "—  Heartful Quotes  —", fill=(255, 255, 255), font=f_sig, anchor="mm")
+    draw.text((540, 1740), "—  Heartful Quotes  —", fill=(255, 255, 255), font=f_sig, anchor="mm")
     bg.save("sky_frame.png")
     frames = int(DUR * 30)
     motion = random.choice([
